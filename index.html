@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>huraru-lab</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <header>
+    <canvas id="header-canvas" class="header-visual"></canvas>
+    <div class="header-text">
+      <h1>HURARU-LAB</h1>
+      <p>技術を試す、ふらるの実験場</p>
+    </div>
+  </header>
+
+  <section class="stats" id="stats"></section>
+
+  <div id="grid"></div>
+
+  <script src="assets/header-visual.js"></script>
+  <script>
+    const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+    function toLocalDateKey(d) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    }
+
+    function createCard(work) {
+      const card = document.createElement("div");
+      card.className = "card";
+      card.tabIndex = 0;
+      card.setAttribute("role", "button");
+      card.setAttribute("aria-label", `${work.title} を開く`);
+
+      const url = `works/${work.slug}/index.html`;
+      const open = () => window.open(url, "_blank", "noopener");
+
+      card.addEventListener("click", open);
+      card.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          open();
+        }
+      });
+
+      const preview = document.createElement("div");
+      preview.className = "card-preview";
+
+      const iframe = document.createElement("iframe");
+      iframe.src = url;
+      iframe.loading = "lazy";
+      iframe.title = work.title;
+      iframe.tabIndex = -1;
+      preview.appendChild(iframe);
+
+      // iframe内部のクリックは親へバブリングしないため、透明なオーバーレイで受け止める
+      const overlay = document.createElement("div");
+      overlay.className = "card-preview-overlay";
+      preview.appendChild(overlay);
+
+      card.appendChild(preview);
+
+      const body = document.createElement("div");
+      body.className = "card-body";
+
+      const h2 = document.createElement("h2");
+      h2.textContent = work.title;
+      body.appendChild(h2);
+
+      if (work.technology && work.technology.length) {
+        const tags = document.createElement("div");
+        tags.className = "tags";
+        for (const t of work.technology) {
+          const tag = document.createElement("span");
+          tag.className = "tag";
+          tag.textContent = t;
+          tags.appendChild(tag);
+        }
+        body.appendChild(tags);
+      }
+
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.textContent = `作成: ${work.createdDate || "-"}`;
+      body.appendChild(meta);
+
+      if (work.note) {
+        const note = document.createElement("p");
+        note.className = "note";
+        note.textContent = work.note;
+        note.title = work.note;
+        body.appendChild(note);
+      }
+
+      // notes.mdがあるかどうかはlabWorks.jsonに書かず、実際にfetchして確認する
+      const notesLink = document.createElement("a");
+      notesLink.className = "notes-link";
+      notesLink.href = `notes.html?slug=${work.slug}`;
+      notesLink.target = "_blank";
+      notesLink.rel = "noopener";
+      notesLink.textContent = "詳細 →";
+      notesLink.hidden = true;
+      // カード全体のクリック(プレビューを開く)より優先させる
+      notesLink.addEventListener("click", (e) => e.stopPropagation());
+      body.appendChild(notesLink);
+
+      fetch(`works/${work.slug}/notes.md`, { method: "HEAD" })
+        .then((res) => {
+          if (res.ok) notesLink.hidden = false;
+        })
+        .catch(() => {});
+
+      card.appendChild(body);
+      return card;
+    }
+
+    function renderStats(works) {
+      const stats = document.getElementById("stats");
+
+      const cardsRow = document.createElement("div");
+      cardsRow.className = "stat-cards";
+      cardsRow.appendChild(renderTagChart(works));
+      cardsRow.appendChild(renderHeatmap(works));
+      stats.appendChild(cardsRow);
+    }
+
+    // カテゴリカル配色(固定順のhue)。8種を超える分は「Other」に折りたたむ
+    const TAG_COLORS = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"];
+    const TAG_OTHER_COLOR = "#5a5a63";
+
+    function renderTagChart(works) {
+      const counts = new Map();
+      for (const w of works) {
+        for (const t of w.technology || []) {
+          counts.set(t, (counts.get(t) || 0) + 1);
+        }
+      }
+
+      const entries = [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+      const MAX_SLOTS = TAG_COLORS.length;
+      const shown = entries.slice(0, MAX_SLOTS);
+      const rest = entries.slice(MAX_SLOTS);
+      if (rest.length) {
+        const otherTotal = rest.reduce((s, [, c]) => s + c, 0);
+        shown.push(["Other", otherTotal]);
+      }
+
+      const total = shown.reduce((s, [, c]) => s + c, 0) || 1;
+
+      const card = document.createElement("div");
+      card.className = "heatmap-card";
+
+      const title = document.createElement("div");
+      title.className = "heatmap-title";
+      title.textContent = `${works.length}件の実験`;
+      card.appendChild(title);
+
+      const body = document.createElement("div");
+      body.className = "tagchart-body";
+
+      const pie = document.createElement("div");
+      pie.className = "tagchart-pie";
+
+      const legend = document.createElement("ul");
+      legend.className = "tagchart-legend";
+
+      let cursor = 0;
+      const stops = [];
+      shown.forEach(([tag, count], i) => {
+        const color = tag === "Other" ? TAG_OTHER_COLOR : TAG_COLORS[i];
+        const pct = (count / total) * 100;
+        const from = cursor;
+        const to = cursor + pct;
+        stops.push(`${color} ${from}% ${to}%`);
+        cursor = to;
+
+        const li = document.createElement("li");
+        li.innerHTML = `<span class="tagchart-swatch" style="background:${color}"></span>` +
+          `<span class="tagchart-name">${tag}</span>` +
+          `<span class="tagchart-count">${count}件・${pct.toFixed(0)}%</span>`;
+        legend.appendChild(li);
+      });
+
+      pie.style.background = `conic-gradient(${stops.join(", ")})`;
+      body.appendChild(pie);
+      body.appendChild(legend);
+      card.appendChild(body);
+
+      return card;
+    }
+
+    function renderHeatmap(works) {
+      const countByDate = new Map();
+      for (const w of works) {
+        if (!w.createdDate) continue;
+        countByDate.set(w.createdDate, (countByDate.get(w.createdDate) || 0) + 1);
+      }
+
+      const WEEKS = 20;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      // 直近約5ヶ月分を「日曜始まり」のグリッドに揃える
+      const end = new Date(today);
+      end.setDate(end.getDate() + (6 - end.getDay()));
+      const start = new Date(end);
+      start.setDate(start.getDate() - WEEKS * 7 + 1);
+
+      let totalInRange = 0;
+
+      const card = document.createElement("div");
+      card.className = "heatmap-card";
+
+      const title = document.createElement("div");
+      title.className = "heatmap-title";
+      card.appendChild(title);
+
+      const container = document.createElement("div");
+      container.className = "heatmap-container";
+
+      const weekdayCol = document.createElement("div");
+      weekdayCol.className = "heatmap-weekdays";
+      weekdayCol.innerHTML = "<span></span><span>Mon</span><span></span><span>Wed</span><span></span><span>Fri</span><span></span>";
+      container.appendChild(weekdayCol);
+
+      const gridWrap = document.createElement("div");
+      gridWrap.className = "heatmap-gridwrap";
+
+      const monthRow = document.createElement("div");
+      monthRow.className = "heatmap-months";
+
+      const grid = document.createElement("div");
+      grid.className = "heatmap";
+      grid.style.gridTemplateColumns = `repeat(${WEEKS}, 1fr)`;
+
+      const maxCount = Math.max(1, ...countByDate.values());
+      let lastMonth = -1;
+
+      for (let week = 0; week < WEEKS; week++) {
+        const weekStart = new Date(start);
+        weekStart.setDate(weekStart.getDate() + week * 7);
+        const m = weekStart.getMonth();
+        const label = document.createElement("div");
+        label.className = "heatmap-month-label";
+        if (m !== lastMonth && weekStart <= today) {
+          label.textContent = MONTH_LABELS[m];
+          lastMonth = m;
+        }
+        monthRow.appendChild(label);
+
+        const col = document.createElement("div");
+        col.className = "heatmap-col";
+        for (let day = 0; day < 7; day++) {
+          const d = new Date(start);
+          d.setDate(d.getDate() + week * 7 + day);
+          const key = toLocalDateKey(d);
+          const count = countByDate.get(key) || 0;
+          const cell = document.createElement("div");
+          cell.className = "heatmap-cell";
+          if (d > today) {
+            cell.classList.add("heatmap-cell-future");
+          } else {
+            totalInRange += count;
+            const level = count === 0 ? 0 : Math.min(4, Math.ceil((count / maxCount) * 4));
+            cell.classList.add(`heatmap-level-${level}`);
+          }
+          cell.title = `${key}: ${count}件`;
+          col.appendChild(cell);
+        }
+        grid.appendChild(col);
+      }
+
+      gridWrap.appendChild(monthRow);
+      gridWrap.appendChild(grid);
+      container.appendChild(gridWrap);
+      card.appendChild(container);
+
+      title.textContent = `${totalInRange}件の更新 - 直近${WEEKS}週`;
+
+      const legend = document.createElement("div");
+      legend.className = "heatmap-legend";
+      legend.innerHTML = `<span>Less</span>
+        <span class="heatmap-cell heatmap-level-0"></span>
+        <span class="heatmap-cell heatmap-level-1"></span>
+        <span class="heatmap-cell heatmap-level-2"></span>
+        <span class="heatmap-cell heatmap-level-3"></span>
+        <span class="heatmap-cell heatmap-level-4"></span>
+        <span>More</span>`;
+      card.appendChild(legend);
+
+      return card;
+    }
+
+    fetch("labWorks.json")
+      .then(res => res.json())
+      .then(works => {
+        renderStats(works);
+        const grid = document.getElementById("grid");
+        for (const work of works) {
+          grid.appendChild(createCard(work));
+        }
+      })
+      .catch(err => {
+        document.getElementById("grid").textContent = "labWorks.json の読み込みに失敗しました: " + err;
+      });
+  </script>
+</body>
+
+</html>

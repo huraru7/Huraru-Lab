@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3Dモデルの粒子化 - huraru-lab</title>
+<style>
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: #05050a;
+    overflow: hidden;
+    font-family: -apple-system, "Segoe UI", "Hiragino Sans", "Yu Gothic", sans-serif;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .hud {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    display: flex;
+    gap: 0.5rem;
+  }
+  .hud button {
+    padding: 0.5rem 0.9rem;
+    background: rgba(20, 20, 26, 0.8);
+    color: #e8e8ec;
+    border: 1px solid #3a3a45;
+    border-radius: 6px;
+    font: inherit;
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+  .hud button:hover {
+    border-color: #7dd3fc;
+  }
+  #loading {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #9a9aa5;
+    font-size: 0.85rem;
+  }
+  #loading[hidden] {
+    display: none;
+  }
+  #settings-card {
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    width: 240px;
+    background: rgba(22, 22, 28, 0.85);
+    border: 1px solid #3a3a45;
+    border-radius: 8px;
+    padding: 1rem;
+    color: #e8e8ec;
+  }
+  #settings-card[hidden] {
+    display: none;
+  }
+  #settings-card h2 {
+    font-size: 0.85rem;
+    margin: 0 0 0.9rem;
+    color: #9a9aa5;
+    font-weight: normal;
+  }
+  .field {
+    margin-bottom: 0.9rem;
+  }
+  .field label {
+    display: block;
+    font-size: 0.75rem;
+    color: #9a9aa5;
+    margin-bottom: 0.35rem;
+  }
+  .field select,
+  .field input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.4rem 0.5rem;
+    background: #0f0f12;
+    color: #e8e8ec;
+    border: 1px solid #3a3a45;
+    border-radius: 4px;
+    font: inherit;
+    font-size: 0.85rem;
+  }
+  .field .hint {
+    margin-top: 0.3rem;
+    font-size: 0.7rem;
+    color: #9a9aa5;
+  }
+  #apply-settings {
+    width: 100%;
+    padding: 0.45rem 0.8rem;
+    border-radius: 4px;
+    border: 1px solid #7dd3fc;
+    background: rgba(20, 20, 26, 0.8);
+    color: #e8e8ec;
+    font: inherit;
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+  #apply-settings:hover {
+    background: rgba(125, 211, 252, 0.15);
+  }
+</style>
+</head>
+<body>
+<div id="loading">読み込み中...</div>
+
+<div class="hud">
+  <button id="toggle" hidden>粒子化 →</button>
+</div>
+
+<div id="settings-card" hidden>
+  <h2>表示設定</h2>
+  <div class="field">
+    <label for="model-select">モデル</label>
+    <select id="model-select"></select>
+  </div>
+  <div class="field">
+    <label for="particle-count">粒子の使用個数</label>
+    <input type="number" id="particle-count" min="1" step="1">
+    <div class="hint">元の頂点数までの範囲で指定できます</div>
+  </div>
+  <button id="apply-settings">適用</button>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="script.js"></script>
+</body>
+</html>

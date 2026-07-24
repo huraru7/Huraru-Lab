@@ -1,0 +1,113 @@
+:root {
+  --bg: #0f0f12;
+  --surface: #16161c;
+  --border: #2c2c33;
+  --text: #e8e8ec;
+  --muted: #9a9aa5;
+  --accent: #7dd3fc;
+  --bug: #f2a65a;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 2.5rem 1.5rem 5rem;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, "Segoe UI", "Hiragino Sans", "Yu Gothic", sans-serif;
+  line-height: 1.75;
+}
+main {
+  max-width: 680px;
+  margin: 0 auto;
+}
+a { color: var(--accent); }
+
+/* ヘッダー */
+.back {
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-decoration: none;
+}
+.back:hover { color: var(--accent); }
+h1 {
+  font-size: 1.5rem;
+  margin: 0.6rem 0 0.3rem;
+}
+.lede {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 0 0 1.2rem;
+}
+.demo-link {
+  display: inline-block;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  text-decoration: none;
+  margin-bottom: 1.5rem;
+}
+
+/* 本文(notes.md を変換した内容) */
+#notes-body h2,
+#notes-body h3 {
+  margin: 2.2rem 0 0.9rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+#notes-body h2 { font-size: 1rem; }
+#notes-body h3 { font-size: 0.92rem; border-bottom: none; padding-bottom: 0; }
+#notes-body > h2:first-child { margin-top: 0; }
+
+/* h2 の自動採番 */
+#notes-body {
+  counter-reset: section;
+}
+#notes-body h2::before {
+  counter-increment: section;
+  content: counter(section, decimal-leading-zero) "\2002";
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  font-size: 0.75rem;
+  color: var(--accent);
+}
+
+#notes-body p { margin: 0 0 0.8rem; }
+#notes-body ul { margin: 0 0 0.8rem; padding-left: 1.2rem; }
+#notes-body li { margin-bottom: 0.4rem; }
+
+/* 式・コード抜粋 */
+#notes-body pre {
+  background: #0b0b0e;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  padding: 0.8rem 1rem;
+  overflow-x: auto;
+  font-size: 0.82rem;
+  margin: 0.7rem 0 1rem;
+}
+code {
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+}
+#notes-body p code,
+#notes-body li code {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.05rem 0.35rem;
+  font-size: 0.88em;
+}
+
+/* 引用(>) をバグカード/補足カードとして装飾 */
+#notes-body blockquote {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--bug);
+  border-radius: 8px;
+  padding: 1rem 1.1rem;
+  margin: 0 0 1.1rem;
+}
+#notes-body blockquote > *:last-child { margin-bottom: 0; }
+#notes-body blockquote p:first-child strong {
+  font-size: 0.95rem;
+}
