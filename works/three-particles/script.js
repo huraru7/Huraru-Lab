@@ -2,12 +2,17 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { MeshSurfaceSampler } from "three/addons/math/MeshSurfaceSampler.js";
 
 const MODELS = [
-  { id: "duck", label: "Duck", url: "models/duck/Duck.glb" },
-  { id: "damaged-helmet", label: "Damaged Helmet", url: "models/damaged-helmet/DamagedHelmet.glb" },
-  { id: "suzanne", label: "Suzanne", url: "models/suzanne/Suzanne.gltf" },
+  { id: "ancient-tree", label: "Ancient Tree", url: "models/ancient_tree.glb" },
+  { id: "orc", label: "Low-poly Orc", url: "models/low-poly_orc.glb" },
+  { id: "vtol-helicopter", label: "VTOL Helicopter", url: "models/vtol_helicopter_animated.glb" },
 ];
+
+// 粒子数は頂点数に依存しない(面サンプリングのため)ので、UI上の上限は固定値にする
+const MAX_PARTICLE_COUNT = 200000;
+const DEFAULT_PARTICLE_COUNT = 20000;
 
 const canvas = document.createElement("canvas");
 document.body.appendChild(canvas);
@@ -74,8 +79,50 @@ const dotTexture = createDotTexture();
 let meshGroup = null;
 let points = null;
 let showingParticles = false;
-let allPositions = [];   // 現在のモデルの全頂点座標(x,y,z の平坦配列)
+let meshSamplers = [];   // 現在のモデルの各メッシュ用 { sampler, matrixWorld, area }
 let modelRadius = 1;
+
+// 三角形3点(ワールド座標)から面積を求めるための使い回し用バッファ
+const _triA = new THREE.Vector3();
+const _triB = new THREE.Vector3();
+const _triC = new THREE.Vector3();
+const _tri = new THREE.Triangle();
+
+// ジオメトリのワールド座標での表面積(全三角形の面積の合計)を求める。
+// 面積比でメッシュごとの粒子配分数を決めるために使う
+function computeWorldSurfaceArea(geometry, matrixWorld) {
+  const posAttr = geometry.attributes.position;
+  const index = geometry.index;
+  const triCount = index ? index.count / 3 : posAttr.count / 3;
+  let area = 0;
+  for (let i = 0; i < triCount; i++) {
+    const i0 = index ? index.getX(i * 3) : i * 3;
+    const i1 = index ? index.getX(i * 3 + 1) : i * 3 + 1;
+    const i2 = index ? index.getX(i * 3 + 2) : i * 3 + 2;
+    _triA.fromBufferAttribute(posAttr, i0).applyMatrix4(matrixWorld);
+    _triB.fromBufferAttribute(posAttr, i1).applyMatrix4(matrixWorld);
+    _triC.fromBufferAttribute(posAttr, i2).applyMatrix4(matrixWorld);
+    area += _tri.set(_triA, _triB, _triC).getArea();
+  }
+  return area;
+}
+
+// SkinnedMeshは頂点座標がバインドポーズ(基本姿勢)のまま保持され、実際の見た目の
+// ポーズはGPU側のボーン変形で決まる。MeshSurfaceSamplerは生のジオメトリ座標しか
+// 見ないため、そのままだと粒子が基本姿勢の位置になり元モデルの見た目とズレる。
+// そこで現在のポーズを頂点位置に焼き込んだジオメトリを別途作ってサンプリングに使う
+function bakePosedGeometry(mesh) {
+  const geometry = mesh.geometry.clone();
+  const posAttr = geometry.attributes.position;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < posAttr.count; i++) {
+    v.fromBufferAttribute(posAttr, i);
+    mesh.applyBoneTransform(i, v);
+    posAttr.setXYZ(i, v.x, v.y, v.z);
+  }
+  posAttr.needsUpdate = true;
+  return geometry;
+}
 
 function setMode(particles) {
   showingParticles = particles;
@@ -84,20 +131,36 @@ function setMode(particles) {
   toggleBtn.textContent = particles ? "→ 元モデル" : "→ 粒子化";
 }
 
-// evenly-spaced な間引きで指定個数の粒子を作る(ランダムより形状の見え方が安定する)
+// 各メッシュの表面積比に応じて粒子数を配分し、MeshSurfaceSamplerで
+// メッシュ表面上をランダムサンプリングして指定個数の粒子を作る
 function buildParticleGeometry(count) {
-  const total = allPositions.length / 3;
-  const target = Math.max(1, Math.min(count, total));
+  const target = Math.max(1, Math.min(count, MAX_PARTICLE_COUNT));
+  const totalArea = meshSamplers.reduce((sum, s) => sum + s.area, 0);
   const positions = new Float32Array(target * 3);
-  const stride = total / target;
-  for (let i = 0; i < target; i++) {
-    const srcIndex = Math.min(total - 1, Math.floor(i * stride));
-    positions[i * 3] = allPositions[srcIndex * 3];
-    positions[i * 3 + 1] = allPositions[srcIndex * 3 + 1];
-    positions[i * 3 + 2] = allPositions[srcIndex * 3 + 2];
-  }
+  const v = new THREE.Vector3();
+
+  let writeIndex = 0;
+  let allocatedSoFar = 0;
+  meshSamplers.forEach((entry, i) => {
+    const isLast = i === meshSamplers.length - 1;
+    // 端数の丸め誤差は最後のメッシュにまとめて吸収し、合計を target に一致させる
+    const share = isLast
+      ? target - allocatedSoFar
+      : Math.round((totalArea > 0 ? entry.area / totalArea : 1 / meshSamplers.length) * target);
+    allocatedSoFar += share;
+
+    for (let j = 0; j < share && writeIndex < target; j++) {
+      entry.sampler.sample(v);
+      v.applyMatrix4(entry.matrixWorld);
+      positions[writeIndex * 3] = v.x;
+      positions[writeIndex * 3 + 1] = v.y;
+      positions[writeIndex * 3 + 2] = v.z;
+      writeIndex++;
+    }
+  });
+
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions.subarray(0, writeIndex * 3), 3));
   return geometry;
 }
 
@@ -165,20 +228,22 @@ function loadModel(modelDef) {
       const size = box.getSize(new THREE.Vector3());
       const center = box.getCenter(new THREE.Vector3());
 
-      // rigがまだ(0,0,0)の状態でmeshGroup基準のワールド座標を集める。
+      // rigがまだ(0,0,0)の状態でmeshGroup基準のワールド行列を使ってサンプラーを構築する。
       // ここでrigのオフセットを適用してしまうと、後でpointsをrigの子として
       // 追加した際にオフセットが二重に効いてしまう
-      allPositions = [];
+      meshSamplers = [];
       meshGroup.updateMatrixWorld(true);
       meshGroup.traverse((child) => {
         if (!child.isMesh) return;
-        const posAttr = child.geometry.attributes.position;
-        const v = new THREE.Vector3();
-        for (let i = 0; i < posAttr.count; i++) {
-          v.fromBufferAttribute(posAttr, i);
-          v.applyMatrix4(child.matrixWorld);
-          allPositions.push(v.x, v.y, v.z);
-        }
+        // SkinnedMeshは現在のポーズを焼き込んだジオメトリを別途作ってサンプリングする
+        const geometry = child.isSkinnedMesh ? bakePosedGeometry(child) : child.geometry;
+        const sampleSource = child.isSkinnedMesh ? new THREE.Mesh(geometry) : child;
+        const sampler = new MeshSurfaceSampler(sampleSource).build();
+        const area = computeWorldSurfaceArea(geometry, child.matrixWorld);
+        // child.matrixWorld は参照のまま持つとレンダーループの再計算で書き換わって
+        // しまう(rigの中心合わせオフセットが後から二重に効いてズレる原因になる)ため、
+        // ここで固定値として複製しておく
+        meshSamplers.push({ sampler, matrixWorld: child.matrixWorld.clone(), area });
       });
 
       // モデルのスケールはファイルごとに異なるため、バウンディングボックスから
@@ -201,13 +266,18 @@ function loadModel(modelDef) {
       controls.target.set(0, 0, 0);
       controls.minDistance = modelRadius * 0.5;
       controls.maxDistance = modelRadius * 8;
+
+      // near/farはモデルのスケールに合わせて毎回更新する。固定値のままだと
+      // スケールの大きいモデルでカメラ距離がfarを超え、描画されなくなってしまう
+      camera.near = Math.max(modelRadius * 0.01, 0.01);
+      camera.far = cameraDistance + modelRadius * 8;
+      camera.updateProjectionMatrix();
       controls.update();
 
-      const totalVertices = allPositions.length / 3;
-      particleCountInput.max = totalVertices;
-      particleCountInput.value = totalVertices;
+      particleCountInput.max = MAX_PARTICLE_COUNT;
+      particleCountInput.value = DEFAULT_PARTICLE_COUNT;
 
-      rebuildPoints(totalVertices);
+      rebuildPoints(DEFAULT_PARTICLE_COUNT);
       setMode(showingParticles);
 
       loadingEl.hidden = true;
