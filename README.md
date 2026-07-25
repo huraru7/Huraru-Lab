@@ -4,7 +4,7 @@ Web技術の実験を1つずつ置いていく実験ラボサイト。
 [huraru.com](https://huraru.com)(プロフィール/ガーデン)、[portfolio.huraru.com](https://portfolio.huraru.com)(ポートフォリオ)
 に続く自分を表すためのサイトです。
 
-公開URL: `lab.huraru.com`(予定)
+公開URL: `lab.huraru.com`
 
 ## コンセプト
 
