@@ -4,6 +4,7 @@
     "title": "フローフィールド生成",
     "technology": ["Canvas"],
     "createdDate": "2026-07-24",
+    "updatedDates": ["2026-07-24"],
     "note": "少ないパラメータで複雑な流れを作る"
   },
   {
@@ -11,6 +12,7 @@
     "title": "3Dモデルの粒子化",
     "technology": ["Three.js", "WebGL"],
     "createdDate": "2026-07-24",
+    "updatedDates": ["2026-07-25"],
     "note": "3Dモデルを頂点を粒子として描画する"
   }
 ]
