@@ -88,7 +88,13 @@
 
       const meta = document.createElement("div");
       meta.className = "meta";
-      meta.textContent = `作成: ${work.createdDate || "-"}`;
+      const createdText = `作成: ${work.createdDate || "-"}`;
+      // 更新日は複数記録できるため、カードには最新の1件だけを表示する
+      // (作成日と同じ日しかない場合は「未更新」とみなし表示しない)
+      const updatedDates = (work.updatedDates || []).filter((d) => d && d !== work.createdDate);
+      const latestUpdated = updatedDates.sort().at(-1);
+      const updatedText = latestUpdated ? ` ・ 更新: ${latestUpdated}` : "";
+      meta.textContent = createdText + updatedText;
       body.appendChild(meta);
 
       if (work.note) {
@@ -197,10 +203,14 @@
     }
 
     function renderHeatmap(works) {
+      // 作成日と(複数ありうる)更新日すべてをカレンダーに反映する。同日が
+      // 重複していても二重計上しないよう、1件あたりの活動日をSetで一意にする
       const countByDate = new Map();
       for (const w of works) {
-        if (!w.createdDate) continue;
-        countByDate.set(w.createdDate, (countByDate.get(w.createdDate) || 0) + 1);
+        const activityDates = new Set([w.createdDate, ...(w.updatedDates || [])].filter(Boolean));
+        for (const date of activityDates) {
+          countByDate.set(date, (countByDate.get(date) || 0) + 1);
+        }
       }
 
       const WEEKS = 20;
